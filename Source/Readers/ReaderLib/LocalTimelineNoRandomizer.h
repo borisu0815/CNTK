@@ -36,7 +36,7 @@ public:
     }
 
 private:
-    void PrefetchChunk();
+    void Prefetch();
 
     // Current chunk position.
     ChunkIdType m_currentChunkPosition;

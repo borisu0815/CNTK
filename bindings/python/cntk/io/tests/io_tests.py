@@ -1133,8 +1133,17 @@ def test_user_deserializer_sample_mode():
     def run_minibatch_source(minibatch_source, num_chunks, num_samples_per_value):
         sample_x_values = np.zeros(num_chunks, dtype=np.int32)
         sample_y_values = np.zeros(num_chunks, dtype=np.int32)
+        mb_count = 0
         while True:
+            if mb_count % 10 == 1: # perform checkpointing
+                checkpoint_state = minibatch_source.get_checkpoint_state()
+                for i in range(3): 
+                    minibatch_source.next_minibatch(20)
+                minibatch_source.restore_from_checkpoint(checkpoint_state)
+                mb_count +=1
+                continue            
             mb = minibatch_source.next_minibatch(20)
+            mb_count += 1
             if not mb:
                 break
 
@@ -1147,6 +1156,7 @@ def test_user_deserializer_sample_mode():
                 for sample in sequence:
                     value = int(sample[0][0])
                     sample_y_values[value] += 1
+            mb = None
 
         expected_values = np.full(num_chunks, fill_value=num_samples_per_value, dtype=np.int32)
         assert (sample_x_values == expected_values).all()
@@ -1177,9 +1187,18 @@ def test_user_deserializer_sequence_mode():
     def run_minibatch_source(minibatch_source, num_chunks, num_sequences_per_value):
         sequence_x_values = np.zeros(num_chunks, dtype=np.int32)
         sequence_y_values = np.zeros(num_chunks, dtype=np.int32)
+        mb_count = 0
         while True:
-            mb = None
+            if mb_count % 10 == 1: # perform checkpointing
+                checkpoint_state = minibatch_source.get_checkpoint_state()
+                for i in range(3): 
+                    minibatch_source.next_minibatch(20)
+                minibatch_source.restore_from_checkpoint(checkpoint_state)
+                mb_count +=1
+                continue            
+
             mb = minibatch_source.next_minibatch(20)
+            mb_count += 1
             if not mb:
                 break
 
@@ -1188,6 +1207,7 @@ def test_user_deserializer_sequence_mode():
 
             for sequence in mb[minibatch_source.streams.y].as_sequences(C.sequence.input_variable((3,), True)):             
                 sequence_y_values[int(sequence.toarray()[0][0])] += 1
+            mb = None
 
         expected_values = np.full(num_chunks, fill_value=num_sequences_per_value, dtype=np.int32)
         assert (sequence_x_values == expected_values).all()

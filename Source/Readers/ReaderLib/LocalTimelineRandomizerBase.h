@@ -37,11 +37,18 @@ public:
 
 private:
     // Should preserve/retrieve the state in the derived classes.
+    // Inside there is no prefetch running.
     virtual Dictionary GetInnerState() = 0;
     virtual void SetInnerState(const Dictionary& state) = 0;
 
     // The function should fill m_sequenceWindow with new data.
+    // Inside there is no prefetch running.
     virtual void RefillSequenceWindow() = 0;
+
+    // Peforms prefetch on a different thread.
+    virtual void Prefetch() = 0;
+
+    void Refill();
 
     // Gets next sequences not exceeding localSampleCount for this worker and globalSampleCount across workers.
     void GetNextSequenceDescriptions(size_t maxSampleCount, Sequences& result);
@@ -61,6 +68,11 @@ private:
     }
 
 protected:
+    inline size_t ValueOf(const Dictionary& d, const std::wstring& k)
+    {
+        return d[k].ValueType() == DictionaryValue::Type::Int ? (size_t)d[k].Value<int>() : d[k].Value<size_t>();
+    };
+
     // Checks if a sequence descriptor is a special marker for the end of the sweep.
     inline bool IsEndOfSweep(const SequenceDescription& sequence)
     {
@@ -89,25 +101,20 @@ protected:
     }
 
     const static SequenceDescription s_endOfSweep; // Sequence indicating end of the sweep.
-
-    DataDeserializerPtr m_deserializer;
+    const DataDeserializerPtr m_deserializer;
 
     // Whether to get sequences using multiple thread.
     // Useful in case deserializer performs CPU intensive deserialization (e.g. decompression)
-    bool m_multithreadedGetNextSequences;
+    const bool m_multithreadedGetNextSequences;
+
+    // Original chunk descriptions.
+    const ChunkDescriptions m_originalChunkDescriptions;
 
     // Epoch configuration
     EpochConfiguration m_config;
 
-    // Original chunk descriptions.
-    ChunkDescriptions m_originalChunkDescriptions;
-
     // Current window of sequence descriptions.
     SequenceWindow m_window;
-
-    // Current sequence position the randomizer works with.
-    size_t m_sweepIndex;
-    size_t m_numberOfSamplesSeenSoFar;
 
     // Minibatch sequences, and minibatch chunks.
     std::vector<SequenceDescription> m_sequenceBuffer;
@@ -118,6 +125,12 @@ protected:
 
     Dictionary m_currentState;
     std::future<void> m_prefetch;
+
+private:
+        // Current sequence position the randomizer works with.
+        size_t m_sweepIndex;
+        size_t m_numberOfSamplesSeenSoFar;
+
 };
 
 }

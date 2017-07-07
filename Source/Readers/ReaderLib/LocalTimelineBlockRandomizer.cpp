@@ -23,14 +23,15 @@ LocalTimelineBlockRandomizer::LocalTimelineBlockRandomizer(
   m_randomizationRange(randomizationRange),
   m_seedOffset(seedOffset),
   m_chunkPosition(0),
-  m_sampleBasedRandomizationWindow(sampleBasedRandomizationWindow)
+  m_sampleBasedRandomizationWindow(sampleBasedRandomizationWindow),
+  m_sweepIndex(0)
 {
     m_prefetchedChunkDescriptions = m_originalChunkDescriptions;
     m_rng.seed((unsigned long)m_sweepIndex + m_seedOffset);
     Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedChunkDescriptions, m_rng);
 }
 
-void LocalTimelineBlockRandomizer::PrefetchChunks()
+void LocalTimelineBlockRandomizer::Prefetch()
 {
     size_t capturedPosition = m_chunkPosition;
     size_t capturedSweepIndex = m_sweepIndex;
@@ -50,22 +51,11 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
             auto desc = m_prefetchedChunkDescriptions[position];
             if (position % m_config.m_numberOfWorkers == m_config.m_workerRank) // Need to add to the window
             {
-                ChunkPtr data;
                 size_t oldSize = m_prefetchedSequences.size();
-                if (m_window.m_dataChunks.find(desc.m_id) == m_window.m_dataChunks.end())
-                {
-                    // Query deserializer.
-                    data = m_deserializer->GetChunk(desc.m_id);
-                    m_deserializer->GetSequencesForChunk(desc.m_id, m_prefetchedSequences);
-                }
-                else // Simple copy
-                {
-                    for (size_t i = 0; i < m_window.m_sequences.size(); ++i)
-                        if (m_window.m_sequences[i].m_chunkId == desc.m_id)
-                            m_prefetchedSequences.push_back(m_window.m_sequences[i]);
-                    data = m_window.m_dataChunks[desc.m_id];
-                }
 
+                // Query deserializer.
+                ChunkPtr data = m_deserializer->GetChunk(desc.m_id);
+                m_deserializer->GetSequencesForChunk(desc.m_id, m_prefetchedSequences);
                 m_prefetchedChunks.push_back(std::make_tuple(desc, data));
 
                 if (!m_sampleBasedRandomizationWindow)
@@ -113,7 +103,7 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
             size_t randomizationPositionInSweep = capturedPosition;
             for (size_t i = 0; i < sweepIndices.size(); ++i)
             {
-                m_rng.seed((unsigned long)(capturedPosition + capturedSweepIndex + i + m_seedOffset));
+                m_rng.seed((unsigned long)(randomizationPositionInSweep + capturedSweepIndex + i + m_seedOffset));
                 randomizationPositionInSweep = 0; // Make sure same as we start from the beginning of the sweep.
                 Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedSequences, sweepIndices[i].first, sweepIndices[i].second, m_rng);
             }
@@ -123,40 +113,36 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
 
 void LocalTimelineBlockRandomizer::RefillSequenceWindow()
 {
-    if (!m_prefetch.valid())
-        PrefetchChunks();
-
-    m_prefetch.wait();
-
     m_window.m_sequences.clear();
     m_window.m_dataChunks.clear();
 
     m_window.m_sequences.insert(m_window.m_sequences.end(), m_prefetchedSequences.begin(), m_prefetchedSequences.end());
+    for (const auto& s : m_window.m_sequences)
+        if (IsEndOfSweep(s))
+            m_sweepIndex++;
+
     for (const auto& c : m_prefetchedChunks)
     {
         m_window.m_dataChunks.insert(std::make_pair(std::get<0>(c).m_id, std::get<1>(c)));
         m_chunkPosition = (m_chunkPosition + 1) % m_originalChunkDescriptions.size();
     }
-
-    // Prefetch new data chunks.
-    PrefetchChunks();
 }
 
 Dictionary LocalTimelineBlockRandomizer::GetInnerState()
 {
     Dictionary state;
     state[L"chunkPosition"] = (size_t)m_chunkPosition;
+    state[L"sweepIndex"] = (size_t)m_sweepIndex;
     return state;
 }
 
 void LocalTimelineBlockRandomizer::SetInnerState(const Dictionary& state)
 {
-    if (m_prefetch.valid())
-        m_prefetch.wait();
-
+    m_sweepIndex = ValueOf(state, L"sweepIndex");
     m_rng.seed((unsigned long)m_sweepIndex + m_seedOffset);
+    m_prefetchedChunkDescriptions = m_originalChunkDescriptions;
     Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedChunkDescriptions, m_rng);
-    m_chunkPosition = (ChunkIdType)state[L"globalChunkPosition"].Value<size_t>();
+    m_chunkPosition = (ChunkIdType)ValueOf(state, L"chunkPosition");
 }
 
 }

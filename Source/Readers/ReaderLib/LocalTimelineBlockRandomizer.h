@@ -33,10 +33,11 @@ public:
     void RefillSequenceWindow() override;
 
 private:
-    void PrefetchChunks();
+    void Prefetch();
 
     const size_t m_randomizationRange;
     const size_t m_seedOffset;
+    const bool m_sampleBasedRandomizationWindow;
 
     // Current chunk position that the randomizer works with.
     ChunkIdType m_chunkPosition;
@@ -45,10 +46,10 @@ private:
 
     // Randomized chunk descriptions.
     ChunkDescriptions m_prefetchedChunkDescriptions;
+    size_t m_sweepIndex;
 
     std::vector<SequenceDescription> m_prefetchedSequences;
     std::vector<std::tuple<ChunkDescription, ChunkPtr>> m_prefetchedChunks;
-    bool m_sampleBasedRandomizationWindow;
 };
 
 }

@@ -1,6 +1,27 @@
 %module(directors="1") cntk_py
 
+%feature("except") *::StreamInfos %{
+    StartExceptionHandling;
+    AllowThreadsGuard allowThreads;
+    $action
+    EndExceptionHandling;
+%}
+
 %feature("except") *::GetNextMinibatch %{
+    StartExceptionHandling;
+    AllowThreadsGuard allowThreads;
+    $action
+    EndExceptionHandling;
+%}
+
+%feature("except") *::GetCheckpointState %{
+    StartExceptionHandling;
+    AllowThreadsGuard allowThreads;
+    $action
+    EndExceptionHandling;
+%}
+
+%feature("except") *::RestoreFromCheckpoint %{
     StartExceptionHandling;
     AllowThreadsGuard allowThreads;
     $action

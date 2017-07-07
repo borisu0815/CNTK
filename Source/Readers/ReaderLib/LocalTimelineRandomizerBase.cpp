@@ -23,10 +23,9 @@ LocalTimelineRandomizerBase::LocalTimelineRandomizerBase(
   m_multithreadedGetNextSequences(multithreadedGetNextSequences),
   m_cleaner(maxNumberOfInvalidSequences),
   m_sweepIndex(0),
-  m_numberOfSamplesSeenSoFar(0)
+  m_numberOfSamplesSeenSoFar(0),
+  m_originalChunkDescriptions(deserializer->GetChunkDescriptions())
 {
-    assert(deserializer != nullptr);
-    m_originalChunkDescriptions = m_deserializer->GetChunkDescriptions();
     if (m_originalChunkDescriptions.empty())
         RuntimeError("LocalTimelineRandomizerBase: Expected input to contain samples, but the number of successfully read samples was 0.");
 }
@@ -47,10 +46,22 @@ void LocalTimelineRandomizerBase::StartEpoch(const EpochConfiguration& config)
         m_config.m_totalEpochSizeInSamples = m_config.m_totalEpochSizeInSamples / m_config.m_numberOfWorkers + shouldAddOneSample;
     }
 
+    Refill();
+}
+
+void LocalTimelineRandomizerBase::Refill()
+{
     // Fill the first window remembering the state,
     // the window is expandable.
     m_currentState = GetInnerState();
+
+    if (!m_prefetch.valid())
+        Prefetch();
+    m_prefetch.get();
+
     RefillSequenceWindow();
+
+    Prefetch();
 }
 
 void LocalTimelineRandomizerBase::MoveToNextSequence()
@@ -63,9 +74,9 @@ void LocalTimelineRandomizerBase::MoveToNextSequence()
 
     assert(m_window.m_sequencePosition + 1 == m_window.m_sequences.size());
 
-    m_currentState = GetInnerState();
     m_window.m_sequencePosition = 0;
-    RefillSequenceWindow();
+
+    Refill();
 }
 
 // Gets next sequences not exceeding local and global samples.
@@ -195,14 +206,22 @@ Dictionary LocalTimelineRandomizerBase::GetState()
     return state;
 }
 
+inline size_t GetSizeTValue(const Dictionary& d, const std::wstring& key)
+{
+    return d[key].ValueType() == DictionaryValue::Type::Int ? d[key].Value<int>() : d[key].Value<size_t>();
+}
+
 void LocalTimelineRandomizerBase::SetState(const Dictionary& state)
 {
-    m_sweepIndex = state[L"sweepIndex"].Value<size_t>();
-    m_numberOfSamplesSeenSoFar = state[L"numberOfSamplesSeenSoFar"].Value<size_t>();
-    m_window.m_sequencePosition = state[L"currentSequencePositionInWindow"].Value<size_t>();
+    m_sweepIndex = ValueOf(state, L"sweepIndex");
+    m_numberOfSamplesSeenSoFar = ValueOf(state, L"numberOfSamplesSeenSoFar");
+    m_window.m_sequencePosition = ValueOf(state, L"currentSequencePositionInWindow");
 
+    if (m_prefetch.valid())
+        m_prefetch.get();
     SetInnerState(state[L"innerState"].Value<Dictionary>());
-    RefillSequenceWindow();
+
+    Refill();
 }
 
 void LocalTimelineRandomizerBase::SetConfiguration(const ReaderConfiguration& config)
