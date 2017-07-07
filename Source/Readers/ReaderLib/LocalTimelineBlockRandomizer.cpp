@@ -39,6 +39,7 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
     {
         size_t position = capturedPosition;
         size_t sweepIndex = capturedSweepIndex;
+
         // Prefetch does not change any state that cannot be recalculated,
         // only prefetches data.
         int64_t range = m_randomizationRange;
@@ -46,14 +47,6 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
         m_prefetchedSequences.clear();
         while (range > 0)
         {
-            if (position == 0)
-            {
-                sweepIndex++;
-                m_prefetchedChunkDescriptions = m_originalChunkDescriptions;
-                m_rng.seed((unsigned long)sweepIndex + m_seedOffset);
-                Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedChunkDescriptions, m_rng);
-            }
-
             auto desc = m_prefetchedChunkDescriptions[position];
             if (position % m_config.m_numberOfWorkers == m_config.m_workerRank) // Need to add to the window
             {
@@ -75,7 +68,7 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
 
                 m_prefetchedChunks.push_back(std::make_tuple(desc, data));
 
-                if (m_sampleBasedRandomizationWindow)
+                if (!m_sampleBasedRandomizationWindow)
                     --range;
                 else
                     for (size_t i = oldSize; i < m_prefetchedSequences.size(); ++i)
@@ -87,16 +80,25 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
                 m_prefetchedChunks.push_back(std::make_tuple(ChunkDescription{}, nullptr));
             }
 
+            if (position == m_originalChunkDescriptions.size() - 1)
+            {
+                sweepIndex++;
+                m_prefetchedChunkDescriptions = m_originalChunkDescriptions;
+                m_rng.seed((unsigned long)sweepIndex + m_seedOffset);
+                Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedChunkDescriptions, m_rng);
+                m_prefetchedSequences.push_back(s_endOfSweep);
+            }
+
             position = (position + 1) % m_originalChunkDescriptions.size();
         }
 
         // Find all end of sweep markers and randomize among them.
-        if (sweepIndex == capturedSweepIndex)
+        if (sweepIndex == capturedSweepIndex) // Same sweep, simply randomize.
         {
             m_rng.seed((unsigned long)(capturedPosition + sweepIndex + m_seedOffset));
             Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedSequences, m_rng);
         }
-        else
+        else // When several sweeps - make sure randomize only inside the sweep.
         {
             std::vector<std::pair<size_t, size_t>> sweepIndices;
             size_t curPos = 0;
@@ -108,10 +110,11 @@ void LocalTimelineBlockRandomizer::PrefetchChunks()
                 }
 
             sweepIndices.push_back(std::make_pair(curPos, m_prefetchedSequences.size()));
-
+            size_t randomizationPositionInSweep = capturedPosition;
             for (size_t i = 0; i < sweepIndices.size(); ++i)
             {
-                m_rng.seed((unsigned long)(capturedPosition + sweepIndex + i + m_seedOffset));
+                m_rng.seed((unsigned long)(capturedPosition + capturedSweepIndex + i + m_seedOffset));
+                randomizationPositionInSweep = 0; // Make sure same as we start from the beginning of the sweep.
                 Microsoft::MSR::CNTK::RandomShuffleMT(m_prefetchedSequences, sweepIndices[i].first, sweepIndices[i].second, m_rng);
             }
         }
@@ -128,16 +131,10 @@ void LocalTimelineBlockRandomizer::RefillSequenceWindow()
     m_window.m_sequences.clear();
     m_window.m_dataChunks.clear();
 
+    m_window.m_sequences.insert(m_window.m_sequences.end(), m_prefetchedSequences.begin(), m_prefetchedSequences.end());
     for (const auto& c : m_prefetchedChunks)
     {
-        m_window.m_sequences.insert(m_window.m_sequences.end(), m_prefetchedSequences.begin(), m_prefetchedSequences.end());
         m_window.m_dataChunks.insert(std::make_pair(std::get<0>(c).m_id, std::get<1>(c)));
-
-        // Last chunk
-        auto sweepEnd = (m_chunkPosition == m_originalChunkDescriptions.size() - 1);
-        if (sweepEnd)
-            m_window.m_sequences.push_back(s_endOfSweep);
-
         m_chunkPosition = (m_chunkPosition + 1) % m_originalChunkDescriptions.size();
     }
 
