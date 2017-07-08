@@ -30,6 +30,7 @@
 
 #define PCLOSE_ERROR -1
 #define WRITE_BUFFER_SIZE (1024 * 1024)
+#define HDFS_PREFIX "hdfs://"
 
 namespace Microsoft { namespace MSR { namespace CNTK {
 
@@ -85,6 +86,14 @@ template /*static*/ void File::MakeIntermediateDirs<wstring>(const wstring& file
 // all constructors call this
 void File::Init(const wchar_t* filename, int fileOptions)
 {
+    // Init as Hadoop_file_system if filename starts with "hdfs://"
+    hdfsFile = nullptr;
+    if (filename.compare(0, HDFS_PREFIX.size(), HDFS_PREFIX))
+    {
+        hdfsFile = Init_hdfs(filename, fileOptions);
+        return;
+    }
+
     m_filename = filename;
     m_options = fileOptions;
     if (m_filename.empty())

@@ -4,95 +4,9 @@
 //
 #pragma once
 
-#include "Basics.h"
-#include <stdio.h>
-#include <string>
-#include <vector>
-#include <stdint.h>
-#ifdef _WIN32
-#define NOMINMAX
-#include "Windows.h"
-#endif
-#ifdef __unix__
-#include <unistd.h>
-#endif
-#include "fileutil.h" // for f{ge,pu}t{,Text}()
-#include <fstream>    // for LoadMatrixFromTextFile() --TODO: change to using this File class
-#include <sstream>
-
 namespace Microsoft { namespace MSR { namespace CNTK {
 
-using namespace std;
-
-// file options, Type of textfile to use
-enum FileOptions
-{
-    fileOptionsNull = 0,                                        // invalid value
-    fileOptionsBinary = 1,                                      // binary file
-    fileOptionsText = 2,                                        // text based file, UTF-8
-    fileOptionsType = fileOptionsBinary | fileOptionsText,      // file types
-    fileOptionsRead = 8,                                        // open in read mode
-    fileOptionsWrite = 16,                                      // open in write mode
-    fileOptionsSequential = 32,                                 // optimize for sequential reads (allocates big buffer)
-    fileOptionsReadWrite = fileOptionsRead | fileOptionsWrite,  // read/write mode
-};
-
-// markers used for text files
-enum FileMarker
-{
-    fileMarkerNull = 0,          // invalid value
-    fileMarkerBeginFile = 1,     // begin of file marker
-    fileMarkerEndFile = 2,       // end of file marker
-    fileMarkerBeginList = 3,     // Beginning of list marker
-    fileMarkerListSeparator = 4, // separate elements of a list
-    fileMarkerEndList = 5,       // end of line/list marker
-    fileMarkerBeginSection = 6,  // beginning of section
-    fileMarkerEndSection = 7,    // end of section
-};
-
-// attempt a given operation (lambda) and retry multiple times
-// body - the lambda to retry, must be restartable
-
-template <typename FUNCTION>
-static void attempt(int retries, const FUNCTION& body)
-{
-    for (int attempt = 1;; attempt++)
-    {
-        try
-        {
-            body();
-            if (attempt > 1)
-                fprintf(stderr, "attempt: success after %d retries\n", attempt);
-            break;
-        }
-        catch (const std::exception& e)
-        {
-#ifdef _WIN32
-            void sleep(size_t ms);
-#endif
-            if (attempt >= retries)
-                throw; // failed N times --give up and rethrow the error
-            fprintf(stderr, "attempt: %s, retrying %d-th time out of %d...\n", e.what(), attempt + 1, retries);
-// wait a little, then try again
-#ifdef _WIN32
-            ::Sleep(1000);
-#else // assuming __unix__
-            ::sleep(1);
-#endif
-        }
-    }
-}
-
-template <typename FUNCTION>
-static void attempt(const FUNCTION& body)
-{
-    static const int retries = 5;
-    attempt<FUNCTION>(retries, body);
-    // msra::util::attempt<FUNCTION> (retries, body);
-}
-
-class File
-{
+class hdfsFile {
 private:
     std::wstring m_filename;
     FILE* m_file;        // file handle
@@ -100,13 +14,10 @@ private:
     bool m_seekable;     // this stream is seekable
     int m_options;       // FileOptions ored togther
     void Init(const wchar_t* filename, int fileOptions);
-    hdfsFile* m_hdfsFile; // handle for hdfs file
 
 public:
-    File(const std::wstring& filename, int fileOptions);
-    File(const std::string&  filename, int fileOptions);
-    File(const wchar_t* filename, int fileOptions);
-    ~File();
+    hdfsFile(const std::string&  filename, int fileOptions);
+    ~hdfsFile();
 
     void Flush();
 
@@ -287,7 +198,6 @@ public:
             retLabels.push_back(trim(str));
         }
     }
-
 };
 
 }}}
