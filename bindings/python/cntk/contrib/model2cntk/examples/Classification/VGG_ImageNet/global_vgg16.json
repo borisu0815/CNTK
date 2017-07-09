@@ -1,0 +1,30 @@
+{
+	"SourceSolver" : {
+	    "Source": "Caffe",
+	    "ModelPath": "./VGG_ILSVRC_16_layers_deploy.prototxt",
+	    "WeightsPath": "./VGG_ILSVRC_16_layers.caffemodel",
+    	"PHASE": 1
+	},
+    "ModelSolver": {
+    	"CNTKModelPath": "./VGG16_ImageNet.cntkmodel"
+    },
+	"ValidSolver": {
+		"SavePath": "./Valid",
+		"ValInputs": {
+			"data": [[0, 255], []]
+		},
+		"ValNodes": {
+			"prob": "prob"
+		}
+	},
+    "ClassifyEvalSolver": {    	
+	    "TopN": 5,
+    	"LabelTensor": [1000],
+	    "IndexMap": "./val_map.txt",
+	    "MeanFile": "./ImageNet1K_mean.xml",
+	    "DatasetSize": 50000,
+	    "BatchSize": 20,
+	    "CropRatio": 0.875,
+	    "CropType": "center"
+    }
+}

@@ -1,0 +1,30 @@
+{
+	"SourceSolver" : {
+	    "Source": "Caffe",
+	    "ModelPath": "./deploy.prototxt",
+	    "WeightsPath": "./bvlc_alexnet.caffemodel",
+    	"PHASE": 1
+	},
+    "ModelSolver": {
+    	"CNTKModelPath": "./AlexNet_ImageNet.cntkmodel"
+    },
+	"ValidSolver": {
+		"SavePath": "./Valid",
+		"ValInputs": {
+			"data": [[0, 255], []]
+		},
+		"ValNodes": {
+			"prob": "prob"
+		}
+	},
+    "ClassifyEvalSolver": {    	
+	    "TopN": 5,
+    	"LabelTensor": [1000],
+	    "IndexMap": "./val_map.txt",
+	    "MeanFile": "./ImageNet1K_mean.xml",
+	    "DatasetSize": 50000,
+	    "BatchSize": 50,
+	    "CropRatio": 1,
+	    "CropType": "center"
+    }
+}
